@@ -1,6 +1,7 @@
-/* PUBLIC client configuration. The anon/publishable key is safe to include in a static app.
-   Never put service_role or other secret keys here. See README.md and supabase.sql. */
+/* ГИА.мед — публичная конфигурация */
+
 window.GIA_CLOUD = {
-  url: '',     // e.g. https://YOUR-PROJECT.supabase.co
-  anonKey: ''  // e.g. eyJ... (publishable / anon key ONLY)
+  url: 'https://kjqkutqqjkffjtnzxuex.supabase.co',
+  anonKey: 'sb_publishable_2WulXIItXxppV2c60hIIgw_GCqraxmm',
+  turnstileSiteKey: '0x4AAAAAAF731SwfK8wwFCZA'
 };
