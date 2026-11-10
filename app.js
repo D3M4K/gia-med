@@ -26,7 +26,7 @@ function loadOwnerData(){events=read(ownerKey(KEY),[]);drafts=read(ownerKey(DRAF
 function saveEvents(){set(ownerKey(KEY),events)}
 function saveDrafts(){set(ownerKey(DRAFT),drafts);set(ownerKey(DRAFT_TIMES),draftTimes)}
 loadOwnerData();
-let ui={resetOpen:false,newRecoveryCode:'',authMode:'login',authMessage:'',authBusy:false,recoveryPending:false,paletteOpen:false,tab:'home',sub:'blocks',search:'',caseSearch:'',caseId:null,sessionId:null,reportId:null,infoQuestion:null,sort:'all',modal:null,reviewText:'',cloudBusy:false,cloudMessage:'',showCaseReference:false,explanation:false,figure:null};
+let ui={resetOpen:false,newRecoveryCode:'',authMode:'login',authMessage:'',authBusy:false,recoveryPending:false,paletteOpen:false,tab:'home',sub:'blocks',search:'',caseSearch:'',caseId:null,sessionId:null,reportId:null,infoQuestion:null,sort:'all',modal:null,reviewText:'',cloudBusy:false,cloudMessage:'',cloudStatus:'idle',showCaseReference:false,explanation:false,figure:null};
 const todayKey=date=>new Date(date).toLocaleDateString('sv-SE');
 let toastTimeout=null;
 function notify(msg,type='ok') { const el=$('#toast'); if(!el)return;el.textContent=msg;el.className='toast visible '+type;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>el.className='toast',3900);}
@@ -104,7 +104,7 @@ function homeView(ix){
  const caseP=pct(reviewed.length,CASES.length);
  const linePts=sessions.map((s,i)=>`${30+i*(440/Math.max(1,sessions.length-1))},${125-s.score*1.05}`).join(' ');
  const currentWeekText=last7===prev7?'Так же, как на прошлой неделе':`${last7>prev7?'+':''}${last7-prev7} к прошлой неделе`;
- return `<section class="home-heading"><div><div class="eyebrow">ТВОЯ ПОДГОТОВКА · СИБГМУ</div><h1>Главная</h1><p>Вся подготовка под контролем: результаты, динамика и следующий шаг.</p></div><span class="home-date">${safe(new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long'}))}</span></section>
+ return `${accountId()&&ui.cloudStatus==='error'?`<div class="auth-notice" role="status" style="margin:0 0 18px;border-color:#bd8a85">${icon('alert')} <span>${safe(ui.cloudMessage)}. Результаты сохранены на этом устройстве. Проверь сеть и раздел «Профиль».</span></div>`:''}<section class="home-heading"><div><div class="eyebrow">ТВОЯ ПОДГОТОВКА · СИБГМУ</div><h1>Главная</h1><p>Вся подготовка под контролем: результаты, динамика и следующий шаг.</p></div><span class="home-date">${safe(new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long'}))}</span></section>
  <section class="home-hero" aria-label="Главные показатели"><div class="home-hero-content"><div class="eyebrow on-hero">ПУТЬ К ГОСЭКЗАМЕНУ</div><h2>${o.unique?'Твой прогресс растёт.':'Начнём подготовку к ГОСам?'}</h2><p>${o.unique?`Уже разобрано ${o.unique} вопросов из ${o.valid}. Двигайся дальше в комфортном темпе.`:'База тестов и клинических задач готова. Реши первые 50 вопросов и следи за динамикой.'}</p><div class="home-hero-progress"><div><strong>${pct(o.unique,o.valid)}%</strong><span>охват тестовой базы · ${o.unique} / ${o.valid}</span></div>${bar(pct(o.unique,o.valid),'light')}</div></div><div class="hero-goal-card"><div>ГОСЭКЗАМЕН · I ЭТАП</div><strong>70%</strong><span>минимальный порог правильных ответов</span><small>Твоя точность первой попытки: <b>${o.unique?firstAccuracy+'%':'нет данных'}</b></small></div></section>
  <div class="dashboard-kpis">
  ${[
@@ -243,7 +243,7 @@ function scheduleSync(){if(syncing){syncAgain=true;return;}if(resetInProgress||!
 function decodeJwt(token){try{return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))}catch{return {}}}
 async function cloudFetch(path,options={}) {const base=String(CONFIG.url||'').replace(/\/$/,'');if(!/^https:\/\//.test(base))throw Error('Неверный адрес облака');let headers={'apikey':CONFIG.anonKey,'Content-Type':'application/json',...(options.headers||{})};if(auth?.access_token)headers.Authorization=`Bearer ${auth.access_token}`;const r=await fetch(base+path,{...options,headers});const body=await r.text();let data;try{data=JSON.parse(body)}catch{data=body}if(!r.ok)throw Error(data?.msg||data?.error_description||data?.message||`Ошибка сервера ${r.status}`);return {data,headers:r.headers};}
 async function refreshAuth(){if(!auth?.refresh_token)return false;try{const r=await cloudFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:auth.refresh_token})});const a=r.data;auth={...a,user:a.user||auth.user};set(TOKEN,auth);return true}catch{return false}}
-function enterUser(session){if(!session?.access_token||!session?.user?.id)throw Error('Не удалось подтвердить личный кабинет');auth=session;set(TOKEN,auth);guestMode=false;set(GUEST,false);loadOwnerData();ui.tab='home';ui.sessionId=null;ui.reportId=null;ui.caseId=null;ui.authMode='login';ui.authMessage='';render();}
+function enterUser(session){if(!session?.access_token||!session?.user?.id)throw Error('Не удалось подтвердить личный кабинет');auth=session;set(TOKEN,auth);guestMode=false;set(GUEST,false);loadOwnerData();ui.tab='home';ui.sessionId=null;ui.reportId=null;ui.caseId=null;ui.authMode='login';ui.authMessage='';ui.cloudStatus='syncing';ui.cloudMessage='Получаем прогресс из облака…';render();}
 async function accountApi(action,payload){const res=await cloudFetch('/functions/v1/gia-accounts',{method:'POST',body:JSON.stringify({action,...payload})});return res.data}
 async function authAction(username,password,method,nickname='',turnstile_token=''){
  if(!cloudReady())return;
@@ -254,7 +254,7 @@ async function authAction(username,password,method,nickname='',turnstile_token='
     ui.newRecoveryCode=result.recovery_code;ui.authMode='code';ui.authMessage='Аккаунт создан. Перед первым входом сохрани свой код восстановления.';
   }else{
     const res=await cloudFetch('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:usernameEmail(username),password})});
-    enterUser(res.data);await syncNow(false);notify('Добро пожаловать в личный кабинет');
+    enterUser(res.data);const synchronized=await syncNow(false);notify(synchronized?'Добро пожаловать! Прогресс синхронизирован.':'Вход выполнен, но облако не подтвердило синхронизацию. Проверь статус на главной. ',synchronized?'ok':'error');
   }
  }catch(e){ui.authMessage='Не удалось выполнить действие: '+e.message}finally{ui.authBusy=false;render()}
 }
@@ -265,9 +265,9 @@ async function recoverAccount(username,recovery_code,password){
   ui.newRecoveryCode=result.recovery_code;ui.authMode='code';ui.authMessage='Пароль изменён. Обязательно сохрани новый резервный код, старый больше не действует.';
  }catch(e){ui.authMessage='Не удалось восстановить доступ: '+e.message}finally{ui.authBusy=false;render()}
 }
-async function signOut(){if(ui.cloudBusy)return;const prior=auth;auth=null;localStorage.removeItem(TOKEN);guestMode=false;set(GUEST,false);loadOwnerData();ui.sessionId=null;ui.caseId=null;ui.tab='home';ui.authMode='login';ui.authMessage='Вы вышли из аккаунта. Его прогресс остался отдельно.';render();if(prior?.access_token&&cloudReady()){try{await fetch(String(CONFIG.url).replace(/\/$/, '')+'/auth/v1/logout',{method:'POST',headers:{'apikey':CONFIG.anonKey,'Authorization':'Bearer '+prior.access_token}})}catch{}}}
-let syncing=false,resetInProgress=false;
-async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userInitiated)notify('Синхронизация уже идёт; повторю после неё.');return;}if(resetInProgress||!auth?.access_token||!CONFIG.url||!CONFIG.anonKey){if(userInitiated)notify('Сначала настрой облако и войди в аккаунт.');return}syncing=true;ui.cloudBusy=true;if(userInitiated)render();try{
+async function signOut(){if(ui.cloudBusy)return;const prior=auth;auth=null;localStorage.removeItem(TOKEN);guestMode=false;set(GUEST,false);loadOwnerData();ui.sessionId=null;ui.caseId=null;ui.tab='home';ui.authMode='login';ui.authMessage='Вы вышли из аккаунта. Его прогресс остался отдельно.';ui.cloudMessage='';ui.cloudStatus='idle';render();if(prior?.access_token&&cloudReady()){try{await fetch(String(CONFIG.url).replace(/\/$/, '')+'/auth/v1/logout',{method:'POST',headers:{'apikey':CONFIG.anonKey,'Authorization':'Bearer '+prior.access_token}})}catch{}}}
+let syncing=false,resetInProgress=false,lastCloudRefreshAttempt=0;
+async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userInitiated)notify('Синхронизация уже идёт; повторю после неё.');return;}if(resetInProgress||!auth?.access_token||!CONFIG.url||!CONFIG.anonKey){if(userInitiated)notify('Сначала настрой облако и войди в аккаунт.');return}syncing=true;lastCloudRefreshAttempt=Date.now();ui.cloudBusy=true;ui.cloudStatus='syncing';if(userInitiated)render();try{
  const usr=accountId();if(!usr)throw Error('Не удалось определить аккаунт.');
  // Refresh before expiry, if necessary.
  const jwt=decodeJwt(auth.access_token);if(jwt.exp&&jwt.exp*1000<Date.now()+120000){const ok=await refreshAuth();if(!ok)throw Error('Сессия истекла. Войди снова.');}
@@ -283,9 +283,9 @@ async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userIni
  for(let i=0;i<missing.length;i+=100){let batch=missing.slice(i,i+100).map(e=>({id:e.id,user_id:usr,generation,event:e}));await cloudFetch('/rest/v1/progress_events?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify(batch)});}
  if(accountId()!==usr)return;for(const e of events)if(e?.id&&!current.has(e.id))current.set(e.id,e);events=[...current.values()].sort(byTime);saveEvents();
  await syncCaseDrafts(usr,generation);
- if(accountId()!==usr)return;ui.cloudMessage=`Обновлено ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}. Устройств может быть несколько — прогресс объединён.`;
- if(userInitiated)notify('Прогресс синхронизирован');
- }catch(e){ui.cloudMessage=`Ошибка синхронизации: ${e.message}`;if(userInitiated)notify(ui.cloudMessage,'error');}finally{syncing=false;ui.cloudBusy=false;const again=syncAgain;syncAgain=false;if(userInitiated||document.activeElement?.id!=='caseDraft')render();if(again)scheduleSync()}}
+ if(accountId()!==usr)return false;ui.cloudStatus='ok';ui.cloudMessage=`Синхронизировано в ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · ${incoming.length} записей в облаке · добавлено с устройства ${missing.length}.`;
+ if(userInitiated)notify('Прогресс синхронизирован');return true;
+ }catch(e){ui.cloudStatus='error';ui.cloudMessage=`Ошибка синхронизации: ${e.message}`;if(userInitiated)notify(ui.cloudMessage,'error');return false;}finally{syncing=false;ui.cloudBusy=false;const again=syncAgain;syncAgain=false;if(userInitiated||!document.activeElement?.matches?.('input,textarea,[contenteditable=true]'))render();if(again)scheduleSync()}}
 async function syncCaseDrafts(userId,generation){
  // RLS restricts drafts to current account + reset generation.
  const res=await cloudFetch(`/rest/v1/gia_case_drafts?select=case_id,body,updated_at&user_id=eq.${encodeURIComponent(userId)}&generation=eq.${generation}&limit=300`,{method:'GET'});
@@ -405,7 +405,20 @@ document.addEventListener('submit',e=>{
 document.addEventListener('input',e=>{if(e.target.id==='caseDraft'){saveDraft();return}if(e.target.id==='testSearch'){ui.search=e.target.value;let term=ui.search.toLowerCase().trim();$('#searchResults').innerHTML=searchResults(term.length>=2?Q.filter(q=>q.q.toLowerCase().includes(term)||String(q.id)===term||q.o.some(o=>o.t.toLowerCase().includes(term))):[],term);return}if(e.target.id==='caseSearch'){let start=e.target.selectionStart||0;ui.caseSearch=e.target.value;render();let input=$('#caseSearch');input?.focus();input?.setSelectionRange(start,start);return}});
 document.addEventListener('change',e=>{if(e.target.id==='importFile'&&e.target.files?.[0])importJSON(e.target.files[0])});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.paletteOpen){ui.paletteOpen=false;render();return}if(e.key==='Escape'&&ui.figure){ui.figure=null;render();return}if(e.target.closest('input,textarea,select'))return;if(ui.tab==='tests'&&ui.sessionId){const ix=indexes(),s=ix.starts.find(x=>x.sessionId===ui.sessionId);if(!s)return;const q=QM.get(s.ids[cursorOf(s,ix)]),previous=(ix.bySession.get(s.sessionId)||[]).some(x=>x.qid===q.id);if(e.key==='Enter'){e.preventDefault();if(previous)advance();return}if(!previous&&/^[1-9]$/.test(e.key)){const opt=shuffleOptions(q,s.sessionId)[Number(e.key)-1];if(opt)answer(opt.k)}}});
-window.addEventListener('online',()=>scheduleSync());
+// Sync from remote when this device is resumed (not just on first sign-in).
+// Local answers continue to be queued via scheduleSync().
+function pullCloudOnResume(){
+ if(document.visibilityState==='hidden'||!navigator.onLine||!accountId()||!cloudReady()||syncing||resetInProgress)return;
+ const now=Date.now();
+ if(now-lastCloudRefreshAttempt<20000)return; // Avoid rapid duplicate requests.
+ lastCloudRefreshAttempt=now;
+ syncNow(false);
+}
+window.addEventListener('online',()=>{scheduleSync();pullCloudOnResume()});
+window.addEventListener('focus',pullCloudOnResume);
+window.addEventListener('pageshow',pullCloudOnResume);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudOnResume()});
+setInterval(pullCloudOnResume,45000);
 document.addEventListener('click',e=>{if(ui.paletteOpen&&!e.target.closest('.palette-control')){ui.paletteOpen=false;render()}});
 window.addEventListener('storage',e=>{if(e.key===ownerKey(KEY)||e.key===ownerKey(GENERATION)){events=read(ownerKey(KEY),[]);drafts=read(ownerKey(DRAFT),{});render()}else if(e.key===THEME||e.key===PALETTE){initTheme();render()}});
 function registerSW(){if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});}

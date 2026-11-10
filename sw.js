@@ -1,5 +1,5 @@
 /* ГИА.мед v8 — встроенные изображения. Кэш не зависит от PDF и папки media. */
-const CACHE='gia-med-v8-public-signup-20261110';
+const CACHE='gia-med-v8-2-auto-20261111';
 const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{
