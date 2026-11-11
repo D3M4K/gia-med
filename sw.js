@@ -1,5 +1,5 @@
-/* ГИА.мед v10.3 — главная без карточки Лиги; отсчёт до 23 июня 2027. */
-const CACHE='gia-med-v10-3-cleanhome-20261111';
+/* ГИА.мед v10.4.2 — CloudTips, сердце с ₽, две плашки поддержки, таймер до ГИА. */
+const CACHE='gia-med-v10-4-2-cloudtips-donate-20261111';
 const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{
