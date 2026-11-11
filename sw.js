@@ -1,5 +1,5 @@
-/* ГИА.мед v10.1 — мобильная кнопка «Лига», обновление PWA-кэша. */
-const CACHE='gia-med-v10-1-mobile-league-20261111';
+/* ГИА.мед v10.3 — главная без карточки Лиги; отсчёт до 23 июня 2027. */
+const CACHE='gia-med-v10-3-cleanhome-20261111';
 const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{

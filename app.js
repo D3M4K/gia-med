@@ -85,6 +85,44 @@ function shell(inner,ix){
 function hero(ix){const o=overall(ix), p=pct(o.unique,o.valid);return `<section class="hero"><div class="hero-glow"></div><div class="eyebrow on-hero">ПРОГРАММА ГИА · СИБГМУ 2025</div><h1>Твой путь<br>к уверенной сдаче.</h1><p>Без лишнего стресса. В своём темпе.<br>Один вопрос — один шаг к цели.</p><div class="hero-progress"><div class="hero-progress-top"><strong>${p}%</strong><span>${o.unique} / ${o.valid} проверяемых вопросов</span><span class="hero-goal">ОХВАТ БАЗЫ</span></div>${bar(p,'light')}</div></section>`;}
 function miniStats(ix){const o=overall(ix);return `<div class="stats-grid"><div class="metric"><span class="metric-icon violet">${icon('target')}</span><span>Освоено вопросов</span><b>${o.mastered}</b><small>Последний ответ правильный</small></div><div class="metric"><span class="metric-icon teal">${icon('check')}</span><span>Точность ответов</span><b>${pct(o.correctAttempts,o.attempts)}%</b><small>${o.correctAttempts} из ${o.attempts} попыток</small></div><div class="metric"><span class="metric-icon coral">${icon('repeat')}</span><span>Требуют внимания</span><b>${o.unresolved}</b><small>Ошибки ещё не исправлены</small></div></div>`;}
 
+// ГИА.мед v10.2: calendar-day countdown to the start of the state-exam week.
+// Count calendar dates, not elapsed 24-hour periods: daylight-saving changes
+// and the time of day must never make the number jump unexpectedly.
+const GIA_WEEK_START_UTC=Date.UTC(2027,5,23);
+function giaLocalDateKey(date=new Date()){
+ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+function giaDaysRemaining(date=new Date()){
+ const today=Date.UTC(date.getFullYear(),date.getMonth(),date.getDate());
+ return Math.round((GIA_WEEK_START_UTC-today)/86400000);
+}
+function giaDayWord(number){
+ const end=number%10,lastTwo=number%100;
+ return lastTwo>=11&&lastTwo<=14?'дней':end===1?'день':end>=2&&end<=4?'дня':'дней';
+}
+function giaCountdownView(now=new Date()){
+ const days=giaDaysRemaining(now),isToday=days===0,isFuture=days>0;
+ const title=isFuture?'До начала экзаменационной недели':isToday?'ГИА начинается сегодня!':'Дата начала экзаменационной недели прошла';
+ const message=isFuture?'Каждый решённый вопрос приближает к цели.':'Начало экзаменационной недели — 23 июня 2027 года.';
+ const number=isFuture?String(days):isToday?'Сегодня':'23.06';
+ const unit=isFuture?giaDayWord(days):isToday?'первый день':'2027 год';
+ return `<section id="giaCountdown" class="gia-countdown" data-gia-day="${giaLocalDateKey(now)}" aria-label="${safe(title)}: ${isFuture?`${days} ${unit}`:'23 июня 2027 года'}">
+  <div class="gia-countdown-copy">
+   <div class="gia-countdown-kicker">${icon('clock')} <span>ГИА · 2027</span></div>
+   <h2>${title}</h2>
+   <p class="gia-countdown-date">23 июня 2027 <span aria-hidden="true">·</span> начало госэкзаменов</p>
+   <p class="gia-countdown-note">${message}</p>
+  </div>
+  <div class="gia-countdown-value ${isFuture?'':'gia-countdown-finished'}" aria-hidden="true">
+   <strong>${number}</strong><span>${unit}</span>
+  </div>
+ </section>`;
+}
+function refreshGiaCountdown(){
+ const node=$('#giaCountdown');
+ if(node&&node.dataset.giaDay!==giaLocalDateKey())node.outerHTML=giaCountdownView();
+}
+
 function homeView(ix){
  const o=overall(ix),allStarts=new Map(ix.starts.map(s=>[s.sessionId,s]));
  const ended=ix.ends.filter(e=>e.reason==='finished'&&allStarts.has(e.sessionId));
@@ -111,6 +149,7 @@ function homeView(ix){
  const linePts=sessions.map((s,i)=>`${30+i*(440/Math.max(1,sessions.length-1))},${125-s.score*1.05}`).join(' ');
  const currentWeekText=last7===prev7?'Так же, как на прошлой неделе':`${last7>prev7?'+':''}${last7-prev7} к прошлой неделе`;
  return `${accountId()&&ui.cloudStatus==='error'?`<div class="auth-notice" role="status" style="margin:0 0 18px;border-color:#bd8a85">${icon('alert')} <span>${safe(ui.cloudMessage)}. Результаты сохранены на этом устройстве. Проверь сеть и раздел «Профиль».</span></div>`:''}<section class="home-heading"><div><div class="eyebrow">ТВОЯ ПОДГОТОВКА · СИБГМУ</div><h1>Главная</h1><p>Вся подготовка под контролем: результаты, динамика и следующий шаг.</p></div><span class="home-date">${safe(new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long'}))}</span></section>
+ ${giaCountdownView()}
  <section class="home-hero" aria-label="Главные показатели"><div class="home-hero-content"><div class="eyebrow on-hero">ПУТЬ К ГОСЭКЗАМЕНУ</div><h2>${o.unique?'Твой прогресс растёт.':'Начнём подготовку к ГОСам?'}</h2><p>${o.unique?`Уже разобрано ${o.unique} вопросов из ${o.valid}. Двигайся дальше в комфортном темпе.`:'База тестов и клинических задач готова. Реши первые 50 вопросов и следи за динамикой.'}</p><div class="home-hero-progress"><div><strong>${pct(o.unique,o.valid)}%</strong><span>охват тестовой базы · ${o.unique} / ${o.valid}</span></div>${bar(pct(o.unique,o.valid),'light')}</div></div><div class="hero-goal-card"><div>ГОСЭКЗАМЕН · I ЭТАП</div><strong>70%</strong><span>минимальный порог правильных ответов</span><small>Твоя точность первой попытки: <b>${o.unique?firstAccuracy+'%':'нет данных'}</b></small></div></section>
  <div class="dashboard-kpis">
  ${[
@@ -122,7 +161,6 @@ function homeView(ix){
  ['На повторение',''+due,'По интервальному графику','repeat','violet']
  ].map(([name,value,desc,ico,color])=>`<div class="dashboard-kpi"><span class="metric-icon ${color}">${icon(ico)}</span><span>${name}</span><b>${value}</b><small>${desc}</small></div>`).join('')}</div>
  <section class="section home-actions"><div class="section-head"><div><div class="eyebrow">ПРОДОЛЖИТЬ УЧЁБУ</div><h2>Что делать дальше</h2></div></div><div class="action-cards">${ix.active?`<button class="home-action primary-action" data-resume="1">${icon('play')}<span><b>Продолжить тест</b><small>${safe(modeName(ix.active.mode))}, вопрос ${cursorOf(ix.active,ix)+1} из ${ix.active.ids.length}</small></span>${icon('chevron-right')}</button>`:`<button class="home-action primary-action" data-start-block="${nextBlock.n}">${icon('play')}<span><b>Решить блок ${nextBlock.n}</b><small>Вопросы ${nextBlock.from}–${nextBlock.to} · ${nextBlock.qs.length} заданий</small></span>${icon('chevron-right')}</button>`}<button class="home-action" data-start-mistakes="1">${icon('alert')}<span><b>Разобрать ошибки</b><small>${o.unresolved} вопросов требуют внимания</small></span>${icon('chevron-right')}</button><button class="home-action" data-tab="cases">${icon('stethoscope')}<span><b>Клинические задачи</b><small>${reviewed.length} из ${CASES.length} оценено</small></span>${icon('chevron-right')}</button></div></section>
- ${leagueCard(false)}
  <div class="dashboard-panels"><section class="surface dash-panel"><div class="dash-panel-title"><div><h2>Активность за 14 дней</h2><p>Сколько ответов ты дала каждый день</p></div><b>${last7}</b></div><div class="dash-bars">${recent.map((d,i)=>`<div class="dash-day" title="${safe(d.day)}: ${d.count} ответов"><span class="dash-bar-number">${d.count||''}</span><span class="dash-bar-track"><span class="dash-bar-fill ${d.count?'':'is-empty'}" style="height:${Math.max(4,d.count/peak*100)}%"></span></span><small>${i%2===0?safe(d.day.split(' ')[0]):'·'}</small></div>`).join('')}</div><div class="dash-panel-footer"><span>Сегодня: <b>${today}</b></span><span>${currentWeekText}</span></div></section><section class="surface dash-panel"><div class="dash-panel-title"><div><h2>Динамика результатов</h2><p>Точность последних завершённых тестов</p></div><b>${sessions.length} <small>тестов</small></b></div>${sessions.length?`<svg class="trend-chart" viewBox="0 0 500 155" role="img" aria-label="Точность последних ${sessions.length} завершённых тестов"><line x1="30" y1="20" x2="480" y2="20"/><line x1="30" y1="72.5" x2="480" y2="72.5"/><line x1="30" y1="125" x2="480" y2="125"/><line class="goal-line" x1="30" y1="51.5" x2="480" y2="51.5"/><text x="2" y="25">100%</text><text x="7" y="78">50%</text><text x="15" y="130">0%</text><polyline points="${linePts}"/>${sessions.map((s,i)=>`<circle cx="${30+i*(440/Math.max(1,sessions.length-1))}" cy="${125-s.score*1.05}" r="4.5"><title>${s.score}% · ${new Date(s.date).toLocaleDateString('ru-RU')}</title></circle>`).join('')}</svg><div class="dash-panel-footer"><span>Последний результат: <b>${sessions.at(-1).score}%</b></span><span>Порог · 70%</span></div>`:`<div class="chart-empty">${icon('chart')}<p>Пока нет завершённых тестов. Заверши первый блок, чтобы появилась динамика результатов.</p></div>`}</section></div>
  <div class="dashboard-panels"><section class="surface dash-panel compact"><div class="dash-panel-title"><div><h2>Практические задачи</h2><p>Самостоятельная оценка клинических случаев</p></div><b>${reviewed.length}<small> / ${CASES.length}</small></b></div>${bar(caseP)}<div class="case-pulse"><span><i class="pulse-dot good"></i> Верно <b>${goodCases}</b></span><span><i class="pulse-dot partial"></i> Частично <b>${reviewed.filter(e=>e.verdict==='partial').length}</b></span><span><i class="pulse-dot again"></i> Повторить <b>${reviewed.filter(e=>e.verdict==='again').length}</b></span></div><button class="dash-text-btn" data-tab="cases">Перейти к задачам ${icon('arrow-right')}</button></section><section class="surface dash-panel compact"><div class="dash-panel-title"><div><h2>Твоя регулярность</h2><p>Повторение и темп подготовки</p></div>${icon('flame')}</div><div class="habit-metrics"><div><b>${streak(ix)}</b><span>дней подряд</span></div><div><b>${ended.length}</b><span>тестов завершено</span></div><div><b>${avgSecs||'—'}</b><span>сек/ответ в среднем</span></div></div><button class="dash-text-btn" data-tab="stats">Открыть полную статистику ${icon('arrow-right')}</button></section></div>
  <section class="section surface home-blocks"><div class="section-head"><div><div class="eyebrow">БАНК ВОПРОСОВ</div><h2>Прогресс по блокам</h2></div><button class="ghost-btn" data-tab="tests">Все 21 блок ${icon('arrow-right')}</button></div><div class="home-block-grid">${blockData().slice(0,8).map(b=>{const answered=b.qs.filter(q=>ix.byQ.has(q.id)).length,mastered=b.qs.filter(q=>questionStats(q,ix).mastered).length;return `<button class="home-block" data-start-block="${b.n}"><span>Блок ${b.n}</span><b>${mastered}<small> / ${b.qs.length}</small></b>${bar(pct(answered,b.qs.length))}<small>${answered} разобрано</small></button>`}).join('')}</div></section>`;
@@ -144,9 +182,9 @@ async function leagueLoad(force=false){
  try{const jwt=decodeJwt(auth.access_token);if(jwt.exp&&jwt.exp*1000<Date.now()+90000)await refreshAuth();const result=await cloudFetch('/rest/v1/rpc/gia_league_board',{method:'POST',body:JSON.stringify({p_category:category})});
   if(user===accountId()&&category===leagueUi.category){leagueUi.data=result.data;leagueUi.loadedAt=Date.now();}}
  catch(e){if(user===accountId()){leagueUi.error=e.message;leagueUi.data=null;leagueUi.loadedAt=Date.now();}}
- finally{leagueUi.loading=false;if(user===accountId()&&(ui.tab==='home'||ui.tab==='league'))render();}
+ finally{leagueUi.loading=false;if(user===accountId()&&ui.tab==='league')render();}
 }
-function leagueMaybeLoad(){if(accountId()&&(ui.tab==='home'||ui.tab==='league')&&!leagueUi.loading&&Date.now()-leagueUi.loadedAt>=90000)queueMicrotask(()=>leagueLoad(false));}
+function leagueMaybeLoad(){if(accountId()&&ui.tab==='league'&&!leagueUi.loading&&Date.now()-leagueUi.loadedAt>=90000)queueMicrotask(()=>leagueLoad(false));}
 
 function caseFigures(caseId){
  const list=CASE_MEDIA[String(caseId)]||[];
@@ -388,7 +426,7 @@ async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userIni
  if(accountId()!==usr)return;for(const e of events)if(e?.id&&!current.has(e.id))current.set(e.id,e);events=[...current.values()].sort(byTime);saveEvents();
  await syncCaseDrafts(usr,generation);
  if(accountId()!==usr)return false;ui.cloudStatus='ok';ui.cloudMessage=`Синхронизировано в ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · ${incoming.length} записей в облаке · добавлено с устройства ${missing.length}.`;
- if(ui.tab==='home'||ui.tab==='league')leagueLoad(false);
+ if(ui.tab==='league')leagueLoad(false);
  if(userInitiated)notify('Прогресс синхронизирован');return true;
  }catch(e){ui.cloudStatus='error';ui.cloudMessage=`Ошибка синхронизации: ${e.message}`;if(userInitiated)notify(ui.cloudMessage,'error');return false;}finally{syncing=false;ui.cloudBusy=false;const again=syncAgain;syncAgain=false;if(userInitiated||!document.activeElement?.matches?.('input,textarea,[contenteditable=true]'))render();if(again)scheduleSync()}}
 async function syncCaseDrafts(userId,generation){
@@ -545,6 +583,11 @@ window.addEventListener('focus',pullCloudOnResume);
 window.addEventListener('pageshow',pullCloudOnResume);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudOnResume()});
 setInterval(pullCloudOnResume,45000);
+// The countdown updates at the next calendar day even if the home screen stays open.
+setInterval(refreshGiaCountdown,60000);
+window.addEventListener('focus',refreshGiaCountdown);
+window.addEventListener('pageshow',refreshGiaCountdown);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshGiaCountdown();});
 document.addEventListener('click',e=>{if(ui.paletteOpen&&!e.target.closest('.palette-control')){ui.paletteOpen=false;render()}});
 window.addEventListener('storage',e=>{if(e.key===ownerKey(KEY)||e.key===ownerKey(GENERATION)){events=read(ownerKey(KEY),[]);drafts=read(ownerKey(DRAFT),{});render()}else if(e.key===THEME||e.key===PALETTE){initTheme();render()}});
 function registerSW(){if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});}

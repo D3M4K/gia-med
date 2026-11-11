@@ -570,3 +570,49 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{
   .bottomnav .nav-link{font-size:8px;gap:3px;}
   .bottomnav .nav-link .icon{width:21px;height:21px;}
 }
+
+/* ГИА.мед v10.2 — days until state-exam week, 23 June 2027. */
+.gia-countdown{
+ display:flex;align-items:center;justify-content:space-between;gap:25px;
+ position:relative;overflow:hidden;margin:0 0 18px;padding:23px 28px;
+ background:var(--surface);border:1px solid var(--line);border-radius:23px;
+ color:var(--text);box-shadow:var(--shadow);
+}
+.gia-countdown::before{
+ content:'';position:absolute;width:215px;height:215px;right:-99px;top:-111px;
+ border-radius:50%;background:var(--accent-soft);opacity:.8;pointer-events:none;
+}
+.gia-countdown-copy,.gia-countdown-value{position:relative;z-index:1;min-width:0}
+.gia-countdown-kicker{
+ display:flex;gap:7px;align-items:center;color:var(--accent-strong);
+ font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+}
+.gia-countdown-kicker .icon{width:17px;height:17px;flex:none}
+.gia-countdown h2{font-size:clamp(18px,2vw,25px);line-height:1.24;letter-spacing:-.035em;color:var(--deep);margin:11px 0 6px;max-width:540px}
+.gia-countdown-date{font-size:12px;font-weight:700;color:var(--accent-strong);line-height:1.5;margin:0}
+.gia-countdown-note{font-size:11px;line-height:1.5;margin:9px 0 0;color:var(--muted)}
+.gia-countdown-value{
+ flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;
+ min-width:152px;padding:10px 15px;background:var(--accent-soft);border:1px solid var(--line);
+ border-radius:18px;color:var(--accent-strong);font-variant-numeric:tabular-nums;
+}
+.gia-countdown-value strong{font-size:clamp(48px,6vw,65px);letter-spacing:-.07em;line-height:1.06;font-weight:850}
+.gia-countdown-value span{font-size:12px;font-weight:750;margin-top:2px}
+.gia-countdown-value.gia-countdown-finished strong{font-size:26px;letter-spacing:-.03em}
+@media(max-width:760px){
+ .gia-countdown{gap:12px;padding:17px 18px;border-radius:19px;margin-bottom:14px}
+ .gia-countdown h2{font-size:19px;margin:8px 0 5px}
+ .gia-countdown-note{font-size:10px;margin-top:6px}
+ .gia-countdown-date{font-size:11px}
+ .gia-countdown-value{min-width:92px;padding:14px 9px;border-radius:14px}
+ .gia-countdown-value strong{font-size:46px}
+ .gia-countdown-value span{font-size:11px}
+}
+@media(max-width:360px){
+ .gia-countdown{padding:15px 13px;gap:9px}
+ .gia-countdown h2{font-size:17px}
+ .gia-countdown-value{min-width:77px;padding:12px 6px}
+ .gia-countdown-value strong{font-size:40px}
+ .gia-countdown-value span{font-size:10px}
+ .gia-countdown-date{font-size:10px}
+}
