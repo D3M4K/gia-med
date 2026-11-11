@@ -531,3 +531,32 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{
  .admin-table .admin-row-actions{flex-wrap:wrap;margin-top:8px}
  .admin-table tr:has(td[colspan]){display:block}
 }
+
+/* v10: league and registration benefits; surfaces follow existing light/dark variables */
+.auth-benefits{margin-top:30px;padding:21px;border:1px solid var(--line);background:var(--surface);border-radius:20px;color:var(--text);max-width:570px}
+.auth-benefits h2{margin:0 0 13px;font-size:19px;color:var(--deep)}
+.auth-benefits ul{margin:0;padding-left:18px;display:grid;gap:11px;font-size:12px;line-height:1.55}
+.auth-benefits strong{color:var(--deep)}
+.auth-benefits p{font-size:11px;line-height:1.6;color:var(--muted);margin:14px 0 0}
+.league-card{margin-top:24px;padding:23px!important}
+.league-card .section-head h2{display:flex;align-items:center;gap:9px}
+.league-card .section-head h2 .icon{width:22px;height:22px;color:var(--violet)}
+.league-intro,.league-desc,.league-note{font-size:11px;line-height:1.55;color:var(--muted)}
+.league-intro{margin:8px 0 16px}.league-desc{margin:11px 0 15px}
+.league-tabs{display:flex;gap:5px;flex-wrap:wrap;padding:4px;background:var(--surface-alt);border:1px solid var(--line);border-radius:13px}
+.league-tabs button{flex:1;min-width:92px;border:0;background:transparent;color:var(--muted);border-radius:10px;padding:10px 7px;font-size:11px;font-weight:750}
+.league-tabs button.is-active{background:var(--surface);box-shadow:var(--shadow);color:var(--deep)}
+.league-list{display:grid;gap:1px}.league-row{display:grid;grid-template-columns:31px 1fr auto;gap:10px;align-items:center;padding:10px 5px;border-bottom:1px solid var(--line);font-size:13px;color:var(--text)}
+.league-rank{color:var(--muted);text-align:center;font-weight:800}.league-nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.league-row strong{color:var(--deep);font-variant-numeric:tabular-nums}
+.league-me{display:flex;align-items:center;justify-content:space-between;margin-top:13px;padding:14px;background:var(--surface-alt);border:1px solid var(--line);border-radius:12px;font-size:12px}.league-me strong{font-size:18px;color:var(--violet)}
+.league-empty{font-size:12px;color:var(--muted);padding:25px 8px;display:grid;gap:12px;justify-items:start}
+.admin-issued{position:fixed;z-index:9999;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:stretch;max-width:min(500px,calc(100% - 32px));margin:auto;height:max-content;max-height:90vh;overflow:auto;padding:24px;background:var(--surface);border:2px solid var(--line-strong);border-radius:20px;box-shadow:0 0 0 200vmax rgba(0,0,0,.75);gap:12px;color:var(--text)}
+.admin-issued h2{font-size:22px;margin:0;color:var(--deep)}.admin-issued p{font-size:12px;line-height:1.55;color:var(--muted)}
+.admin-issued label{display:grid;gap:6px;font-size:12px;font-weight:700}.admin-issued code{display:block;overflow-wrap:anywhere;font-size:14px;padding:14px;background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;user-select:all}
+@media(max-width:720px){.auth-benefits{padding:16px;margin-top:22px}.league-card{padding:16px!important}.league-tabs button{min-width:calc(50% - 7px)}}
+
+.auth-benefit-teaser{display:none;font-size:12px;line-height:1.65;color:var(--muted);margin:14px 0 0}
+.auth-benefit-teaser summary{cursor:pointer;font-weight:700;color:var(--violet);margin-top:7px}
+.auth-benefit-teaser ul{padding-left:19px;margin:8px 0 0;display:grid;gap:4px}
+.auth-privacy-note{font-size:11px;line-height:1.55;color:var(--muted);margin:7px 0 14px}
+@media(max-width:820px){.auth-intro .auth-benefits{display:none}.auth-benefit-teaser{display:block}}

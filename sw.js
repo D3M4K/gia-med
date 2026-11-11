@@ -1,6 +1,6 @@
 /* ГИА.мед v8 — встроенные изображения. Кэш не зависит от PDF и папки media. */
-const CACHE='gia-med-v9-1-icon-20261111';
-const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest','./icon-192-v10.png','./icon-512-v10.png','./touch-icon-v10.png'];
+const CACHE='gia-med-v10-league-20261111';
+const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{
     await Promise.all(CORE.map(async url=>{try{const response=await fetch(url,{cache:'reload'});if(response.ok)await cache.put(url,response)}catch{}}));
