@@ -1,5 +1,5 @@
-/* ГИА.мед v10.5 — исправления по аудиту учебной базы. */
-const CACHE='gia-med-v10-5-study-audit-20261112';
+/* ГИА.мед v10.6 — ссылки на оригинал PDF. */
+const CACHE='gia-med-v10-6-question-source-20261112';
 const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{
