@@ -1,5 +1,5 @@
-/* ГИА.мед v10.4.2 — CloudTips, сердце с ₽, две плашки поддержки, таймер до ГИА. */
-const CACHE='gia-med-v10-4-2-cloudtips-donate-20261111';
+/* ГИА.мед v10.5 — исправления по аудиту учебной базы. */
+const CACHE='gia-med-v10-5-study-audit-20261112';
 const CORE=['./','./index.html','./styles.css','./app.js','./config.js','./data.js','./media.js','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(async cache=>{
