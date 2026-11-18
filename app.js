@@ -22,7 +22,22 @@ const when=()=>new Date().toISOString();
 const guid=()=>typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16)});
 const read=(key,alt)=>{try{return JSON.parse(localStorage.getItem(key))??alt}catch{return alt}};
 const set=(key,val)=>{try{localStorage.setItem(key,JSON.stringify(val))}catch(e){notify('Не удаётся сохранить данные в этом режиме. Открой приложение на HTTPS-сайте или освободи место.','error')}};
-let auth=read(TOKEN,null),guestMode=read(GUEST,false),events=[],drafts={},draftTimes={};
+// v10.8: only the two designated logins keep a persisted session.
+const SESSION_EXEMPT=new Set(['gia_admin','dikovich_av']);
+const IDLE_MS=15*60*1000, PRESENCE_MS=45000;
+function isPersistentSession(session){
+ const login=String(session?.user?.user_metadata?.username||'').toLowerCase();
+ return SESSION_EXEMPT.has(login)&&String(session?.user?.email||'').toLowerCase()===`giamed_${login}@example.org`;
+}
+const previousAuth=read(TOKEN,null);
+let auth=isPersistentSession(previousAuth)?previousAuth:null,guestMode=false,events=[],drafts={},draftTimes={};
+let closing=false,lastInteraction=Date.now(),lastPresence=0,presencePending=null,lastOnlineRead=0,onlinePending=false,refreshPending=null;
+// Do not touch events, drafts, generations or the guest history on upgrade.
+if(previousAuth&&!auth){try{localStorage.removeItem(TOKEN)}catch{}}
+try{localStorage.setItem(GUEST,JSON.stringify(false))}catch{}
+function persistAuth(){if(isPersistentSession(auth))set(TOKEN,auth);else try{localStorage.removeItem(TOKEN)}catch{}}
+function sessionExpires(){return !!accountId()&&!isPersistentSession(auth)&&Date.now()-lastInteraction>=IDLE_MS;}
+
 function cloudReady(){return !!(CONFIG.url&&CONFIG.anonKey)}
 function accountId(){return cloudReady()&&auth?.access_token&&auth?.user?.id?auth.user.id:null}
 function usernameEmail(u){return 'giamed_'+String(u||'').trim().toLowerCase()+'@example.org';}
@@ -275,7 +290,7 @@ function adminWhen(value){if(!value)return '—';const date=new Date(value);retu
 function adminView(){
  if(!adminUi.allowed)return `<section class="surface panel"><h2>Доступ запрещён</h2><p>Эта панель открывается только назначенным администраторам.</p><button class="secondary-btn" data-tab="home">На главную</button></section>`;
  const isLoading=adminUi.loading||adminUi.busy;
- const active=adminUi.users.filter(x=>!x.banned_until||Date.parse(x.banned_until)<=Date.now()).length;
+ const active=adminUi.onlineCount;
  const seven=adminUi.users.filter(x=>x.last_activity_at&&Date.now()-Date.parse(x.last_activity_at)<7*86400000).length;
  const done=adminUi.users.reduce((n,u)=>n+(Number(u.answer_count)||0),0);
  const maxPage=Math.max(1,Math.ceil(adminUi.total/30));
@@ -294,7 +309,7 @@ function adminView(){
  const a=adminUi.action;
  const confirmBox=a?`<section class="admin-confirm" role="dialog" aria-modal="true" aria-label="Подтверждение действия"><div class="admin-confirm-card"><h2>${actions[a.kind]} аккаунт?</h2><p>Логин: <strong>${safe(a.login)}</strong>. ${a.kind==='delete'?'Удаление необратимо: аккаунт и его облачная статистика будут удалены.':a.kind==='reset_password'?'Убедись в личности пользователя вне сайта. Его старый пароль и резервный код станут недействительны. Временные данные будут показаны один раз.':'Изменение доступа затронет вход в аккаунт; уже выданные токены могут действовать до истечения срока.'}</p><form id="adminActionForm"><label>Введи точный логин для подтверждения<input name="confirmation" required autocomplete="off" spellcheck="false" placeholder="${safe(a.login)}"></label>${a.kind==='reset_password'?'<label>Твой пароль администратора для подтверждения<input type="password" name="admin_password" required minlength="8" autocomplete="current-password" placeholder="Пароль текущего администратора"></label>':''}<div class="admin-confirm-actions"><button class="secondary-btn" type="button" data-admin-cancel="1">Отмена</button><button type="submit" class="${a.kind==='delete'?'admin-delete':'primary-btn'}" ${adminUi.busy?'disabled':''}>${actions[a.kind]}</button></div></form></div></section>`:'';
  return `<section class="page-header"><div class="eyebrow">ТОЛЬКО ДЛЯ ВЛАДЕЛЬЦА</div><h1>Панель администратора</h1><p>Управление аккаунтами и агрегированной активностью. Медицинские ответы и коды восстановления здесь не отображаются.</p></section>
- <section class="admin-kpis"><div class="surface"><small>Найдено пользователей</small><b>${adminUi.total}</b></div><div class="surface"><small>Активных на странице</small><b>${active}</b></div><div class="surface"><small>Учились за 7 дней, на странице</small><b>${seven}</b></div><div class="surface"><small>Ответов, на странице</small><b>${done}</b></div></section>
+ <section class="admin-kpis"><div class="surface"><small>Найдено пользователей</small><b>${adminUi.total}</b></div><div class="surface"><small>Онлайн сейчас · весь сайт</small><b id="adminOnlineCount" title="Уникальные аккаунты, активная вкладка за последние 2 минуты">${Number.isFinite(active)?active:'—'}</b></div><div class="surface"><small>Учились за 7 дней, на странице</small><b>${seven}</b></div><div class="surface"><small>Ответов, на странице</small><b>${done}</b></div></section>
  <section class="surface admin-panel"><div class="admin-heading"><div><h2>Пользователи</h2><p>Поиск по логину и нику · ${isLoading?'Загрузка…':'страница '+adminUi.page+' из '+maxPage}</p></div><button class="secondary-btn" data-admin-refresh="1" ${isLoading?'disabled':''}>${icon('refresh')} Обновить</button></div>
  <form id="adminSearchForm" class="admin-search"><input type="search" name="search" value="${safe(adminUi.search)}" maxlength="64" placeholder="Поиск по логину или нику" aria-label="Поиск по пользователям"><button class="primary-btn" type="submit">Найти</button></form>
  ${adminUi.error?`<div class="admin-error" role="alert">${safe(adminUi.error)}</div>`:''}
@@ -317,8 +332,8 @@ async function adminCheck(){
  try{const result=await adminRequest({action:'status'});
   if(accountId()!==user)return;
   adminUi.allowed=result.is_admin===true;adminUi.checked=true;
- }catch(e){adminUi.allowed=false;adminUi.checked=false;}
- render();
+ }catch(e){if(accountId()!==user)return;adminUi.allowed=false;adminUi.checked=false;}
+ if(accountId()===user)render();
 }
 async function adminLoad(){
  if(!adminUi.allowed||adminUi.loading)return;
@@ -327,6 +342,7 @@ async function adminLoad(){
   const result=await adminRequest({action:'list',page:adminUi.page,search:adminUi.search});
   adminUi.users=Array.isArray(result.users)?result.users:[];
   adminUi.total=Number(result.total)||0;
+  void refreshOnlineCount(true);
   const audit=await adminRequest({action:'audit'});
   adminUi.audit=Array.isArray(audit.records)?audit.records:[];
  }catch(e){adminUi.error='Не удалось загрузить пользователей: '+e.message;}
@@ -351,7 +367,7 @@ function authView(){
  const loginField=`<label>Логин<input type="text" name="username" autocomplete="username" inputmode="text" autocapitalize="none" autocorrect="off" maxlength="24" pattern="[A-Za-z][A-Za-z0-9_]{3,23}" title="4–24 символа: латинские буквы, цифры, _; первый символ — буква" required placeholder="Например, ania_2026"></label>`;
  const passwordField=`<label>Пароль<input type="password" name="password" autocomplete="${mode==='signup'?'new-password':'current-password'}" minlength="${mode==='signup'?8:8}" required placeholder="Не менее 8 символов"></label>`;
  const fields=mode==='signup'?loginField+`<label>Ник в системе<input type="text" name="nickname" maxlength="32" minlength="2" autocomplete="nickname" required placeholder="Например, Аня · 6 курс"></label>`+passwordField+`<label>Подтверждение пароля<input type="password" name="confirm" autocomplete="new-password" minlength="8" required placeholder="Повтори пароль"></label>`:mode==='reset'?loginField+`<label>Резервный код восстановления<input type="text" name="recovery_code" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" required placeholder="Код, сохранённый при регистрации"></label><label>Новый пароль<input type="password" name="password" autocomplete="new-password" minlength="8" required placeholder="Не менее 8 символов"></label><label>Подтверждение пароля<input type="password" name="confirm" autocomplete="new-password" minlength="8" required placeholder="Повтори новый пароль"></label>`:loginField+passwordField;
- return `<div class="auth-screen"><header class="auth-top"><div class="auth-logo"><span class="brand-symbol">${icon('stethoscope')}</span><strong>ГИА<span class="brand-dot">.</span>мед</strong></div><div class="auth-display-controls"><button type="button" class="theme-quick" data-palette-picker="1" title="Палитра">${icon('palette')}</button><button type="button" class="theme-quick" data-theme-toggle="1" title="Сменить тему">${icon(document.documentElement.dataset.theme==='dark'?'sun':'moon')}</button></div></header><main class="auth-wrap"><section class="auth-intro"><span class="auth-label">СИБГМУ · ЛЕЧЕБНОЕ ДЕЛО</span><h1>Готовься уверенно.<br><em>В своём ритме.</em></h1><p>Тесты, клинические задачи и персональная аналитика в одном пространстве.</p><div class="auth-feature"><span>${icon('check-circle')} 1 049 тестов</span><span>${icon('clipboard')} 183 задачи</span><span>${icon('chart')} Личная статистика</span></div><div class="auth-benefits"><h2>Зачем регистрироваться?</h2><ul><li><strong>Один прогресс на всех устройствах.</strong> Продолжай с iPhone, iPad или ноутбука.</li><li><strong>Личный дашборд.</strong> Точность, охват, ошибки и повторение.</li><li><strong>Лига ГИА.мед.</strong> Автоматическое участие в недельном и общем рейтинге под твоим ником.</li><li><strong>Практика и восстановление.</strong> Сохраняй ответы на клинические задачи и восстанавливай пароль резервным кодом.</li></ul><p>В рейтинге видны только ник и учебные показатели. Логин и история ошибок не публикуются.</p></div></section><section class="auth-card"><div class="auth-card-top"><span class="auth-chip">${icon('shield')} Личный кабинет</span>${mode==='login'||mode==='signup'?donateMini():''}<h2>${caption}</h2><p>${hint}</p><div class="auth-benefit-teaser">Регистрация сохраняет прогресс на всех устройствах и автоматически включает тебя в рейтинг под ником.<details><summary>Все преимущества аккаунта</summary><ul><li>Общая статистика и история ошибок</li><li>Автосинхронизация тестов и практических задач</li><li>Рейтинги за неделю и всё время</li><li>Восстановление через резервный код</li></ul></details></div></div>${ui.paletteOpen?`<div class="auth-palette"><div class="palette-options">${paletteChoices()}</div></div>`:''}${!ready&&!saved?`<div class="auth-unconfigured">${icon('info')} <span>Сервер регистрации ещё не подключён. Сейчас доступен гостевой режим, а аккаунты начнут работать после настройки Supabase и защищённых серверных функций.</span></div>`:''}${mode==='signup'&&ready&&!CONFIG.turnstileSiteKey?'<p class="auth-notice">Публичная регистрация временно недоступна: администратор ещё не настроил защиту формы.</p>':''}${ui.authMessage?`<p class="auth-notice" role="status">${safe(ui.authMessage)}</p>`:''}${saved?`<section class="recovery-code-box"><p><strong>Сохрани секретный код в надёжном месте.</strong> Без него и без действующего пароля восстановить доступ автоматически нельзя.</p><code id="recoveryCode">${safe(ui.newRecoveryCode)}</code><button type="button" class="secondary-btn" data-copy-recovery="1">${icon('bookmark')} Скопировать код</button></section><button type="button" class="primary-btn auth-submit" data-auth-mode="login">Ко входу ${icon('arrow-right')}</button>`:`<form id="authGateForm" class="auth-form auth-gate-form" data-mode="${mode}">${fields}${mode==='signup'?'<p class="auth-privacy-note">При регистрации твой ник и учебные баллы автоматически участвуют в общем рейтинге. Не используй личные данные в нике.</p><div id="giaTurnstile" class="gia-turnstile" aria-label="Проверка безопасности"></div>':''}<button class="primary-btn auth-submit" type="submit" ${!ready||ui.authBusy||(mode==='signup'&&!CONFIG.turnstileSiteKey)?'disabled':''}>${ui.authBusy?'Выполняется…':mode==='signup'?'Зарегистрироваться':mode==='reset'?'Сменить пароль':'Войти'} ${icon('arrow-right')}</button></form>`}<div class="auth-links">${mode==='login'?`<button data-auth-mode="reset">Забыли пароль?</button><button data-auth-mode="signup">Создать аккаунт</button>`:mode==='signup'?`<span>Уже есть аккаунт?</span><button data-auth-mode="login">Войти</button>`:mode==='reset'?`<button data-auth-mode="login">Вернуться ко входу</button>`:''}</div>${!saved?`<div class="auth-divider"><span>или</span></div><button type="button" class="auth-guest" data-guest-enter="1">${icon('hard-drive')} Продолжить без аккаунта ${icon('arrow-right')}</button><p class="auth-guest-note">Гостевая статистика сохраняется только в этом браузере. Пароли и аккаунты локально не имитируются.</p>`:''}</section></main><footer class="auth-footer">ГИА.мед · Подготовка по программе государственного экзамена СибГМУ 2025</footer></div>`;
+ return `<div class="auth-screen"><header class="auth-top"><div class="auth-logo"><span class="brand-symbol">${icon('stethoscope')}</span><strong>ГИА<span class="brand-dot">.</span>мед</strong></div><div class="auth-display-controls"><button type="button" class="theme-quick" data-palette-picker="1" title="Палитра">${icon('palette')}</button><button type="button" class="theme-quick" data-theme-toggle="1" title="Сменить тему">${icon(document.documentElement.dataset.theme==='dark'?'sun':'moon')}</button></div></header><main class="auth-wrap"><section class="auth-intro"><span class="auth-label">СИБГМУ · ЛЕЧЕБНОЕ ДЕЛО</span><h1>Готовься уверенно.<br><em>В своём ритме.</em></h1><p>Тесты, клинические задачи и персональная аналитика в одном пространстве.</p><div class="auth-feature"><span>${icon('check-circle')} 1 049 тестов</span><span>${icon('clipboard')} 183 задачи</span><span>${icon('chart')} Личная статистика</span></div><div class="auth-benefits"><h2>Зачем регистрироваться?</h2><ul><li><strong>Один прогресс на всех устройствах.</strong> Продолжай с iPhone, iPad или ноутбука.</li><li><strong>Личный дашборд.</strong> Точность, охват, ошибки и повторение.</li><li><strong>Лига ГИА.мед.</strong> Автоматическое участие в недельном и общем рейтинге под твоим ником.</li><li><strong>Практика и восстановление.</strong> Сохраняй ответы на клинические задачи и восстанавливай пароль резервным кодом.</li></ul><p>В рейтинге видны только ник и учебные показатели. Логин и история ошибок не публикуются.</p></div></section><section class="auth-card"><div class="auth-card-top"><span class="auth-chip">${icon('shield')} Личный кабинет</span>${mode==='login'||mode==='signup'?donateMini():''}<h2>${caption}</h2><p>${hint}</p><div class="auth-benefit-teaser">Регистрация сохраняет прогресс на всех устройствах и автоматически включает тебя в рейтинг под ником.<details><summary>Все преимущества аккаунта</summary><ul><li>Общая статистика и история ошибок</li><li>Автосинхронизация тестов и практических задач</li><li>Рейтинги за неделю и всё время</li><li>Восстановление через резервный код</li></ul></details></div></div>${ui.paletteOpen?`<div class="auth-palette"><div class="palette-options">${paletteChoices()}</div></div>`:''}${!ready&&!saved?`<div class="auth-unconfigured">${icon('info')} <span>Сервер авторизации временно недоступен. Для подготовки необходим аккаунт.</span></div>`:''}${mode==='signup'&&ready&&!CONFIG.turnstileSiteKey?'<p class="auth-notice">Публичная регистрация временно недоступна: администратор ещё не настроил защиту формы.</p>':''}${ui.authMessage?`<p class="auth-notice" role="status">${safe(ui.authMessage)}</p>`:''}${saved?`<section class="recovery-code-box"><p><strong>Сохрани секретный код в надёжном месте.</strong> Без него и без действующего пароля восстановить доступ автоматически нельзя.</p><code id="recoveryCode">${safe(ui.newRecoveryCode)}</code><button type="button" class="secondary-btn" data-copy-recovery="1">${icon('bookmark')} Скопировать код</button></section><button type="button" class="primary-btn auth-submit" data-auth-mode="login">Ко входу ${icon('arrow-right')}</button>`:`<form id="authGateForm" class="auth-form auth-gate-form" data-mode="${mode}">${fields}${mode==='signup'?'<p class="auth-privacy-note">При регистрации твой ник и учебные баллы автоматически участвуют в общем рейтинге. Не используй личные данные в нике.</p><div id="giaTurnstile" class="gia-turnstile" aria-label="Проверка безопасности"></div>':''}<button class="primary-btn auth-submit" type="submit" ${!ready||ui.authBusy||closing||(mode==='signup'&&!CONFIG.turnstileSiteKey)?'disabled':''}>${ui.authBusy?'Выполняется…':mode==='signup'?'Зарегистрироваться':mode==='reset'?'Сменить пароль':'Войти'} ${icon('arrow-right')}</button></form>`}<div class="auth-links">${mode==='login'?`<button data-auth-mode="reset">Забыли пароль?</button><button data-auth-mode="signup">Создать аккаунт</button>`:mode==='signup'?`<span>Уже есть аккаунт?</span><button data-auth-mode="login">Войти</button>`:mode==='reset'?`<button data-auth-mode="login">Вернуться ко входу</button>`:''}</div><p class="auth-guest-note">Вход обязателен. При бездействии 15 минут обычная сессия завершается; учебный прогресс сохраняется.</p></section></main><footer class="auth-footer">ГИА.мед · Подготовка по программе государственного экзамена СибГМУ 2025</footer></div>`;
 }
 
 function mountSignupCaptcha(){
@@ -372,7 +388,7 @@ function disposeSignupCaptcha(){
  if(giaTurnstileWidget!==null&&window.turnstile){try{window.turnstile.remove(giaTurnstileWidget)}catch{}}
  giaTurnstileWidget=null;
 }
-function render(){disposeSignupCaptcha();if(ui.authMode==='update'||(!accountId()&&!guestMode)){$('#app').innerHTML=authView();document.title='Вход · ГИА.мед';mountSignupCaptcha();return;}const ix=indexes();const inSession=!!ui.sessionId&&ui.tab==='tests';if(inSession&& !ix.starts.some(s=>s.sessionId===ui.sessionId))ui.sessionId=null;let main='';
+function render(){disposeSignupCaptcha();if(closing||ui.authMode==='update'||!accountId()){$('#app').innerHTML=authView();document.title='Вход · ГИА.мед';mountSignupCaptcha();return;}const ix=indexes();const inSession=!!ui.sessionId&&ui.tab==='tests';if(inSession&& !ix.starts.some(s=>s.sessionId===ui.sessionId))ui.sessionId=null;let main='';
  if(ui.tab==='home')main=homeView(ix);
  if(ui.tab==='league')main=leagueView();
   if(ui.tab==='tests')main=ui.reportId?reportView(ix):ui.sessionId?sessionView(ix):testsView(ix);
@@ -399,11 +415,17 @@ function reviewNow(){const ix=indexes();const qs=Q.filter(q=>q.a&&dueInfo(q,ix)?
 function mistakesNow(){const ix=indexes();const ids=overall(ix).errors.map(q=>q.id);if(!ids.length){notify('Незакрытых ошибок нет. Отлично!');return}startSession(ids.slice(0,50),'mistakes')}
 function saveDraft(){if(!ui.caseId)return;const el=$('#caseDraft');if(el&&drafts[ui.caseId]!==el.value){drafts[ui.caseId]=el.value;draftTimes[ui.caseId]=when();saveDrafts();scheduleSync()}}
 let syncTimer=null,syncAgain=false;
-function scheduleSync(){if(syncing){syncAgain=true;return;}if(resetInProgress||!auth?.access_token||!CONFIG.url||!CONFIG.anonKey)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>syncNow(false),2300);}
+function scheduleSync(){if(syncing){syncAgain=true;return;}if(closing||resetInProgress||!auth?.access_token||!CONFIG.url||!CONFIG.anonKey)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>syncNow(false),2300);}
 function decodeJwt(token){try{return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))}catch{return {}}}
-async function cloudFetch(path,options={}) {const base=String(CONFIG.url||'').replace(/\/$/,'');if(!/^https:\/\//.test(base))throw Error('Неверный адрес облака');let headers={'apikey':CONFIG.anonKey,'Content-Type':'application/json',...(options.headers||{})};if(auth?.access_token)headers.Authorization=`Bearer ${auth.access_token}`;const r=await fetch(base+path,{...options,headers});const body=await r.text();let data;try{data=JSON.parse(body)}catch{data=body}if(!r.ok)throw Error(data?.msg||data?.error_description||data?.message||`Ошибка сервера ${r.status}`);return {data,headers:r.headers};}
-async function refreshAuth(){if(!auth?.refresh_token)return false;try{const r=await cloudFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:auth.refresh_token})});const a=r.data;auth={...a,user:a.user||auth.user};set(TOKEN,auth);return true}catch{return false}}
-function enterUser(session){if(!session?.access_token||!session?.user?.id)throw Error('Не удалось подтвердить личный кабинет');leagueReset();auth=session;set(TOKEN,auth);guestMode=false;set(GUEST,false);loadOwnerData();ui.tab='home';ui.sessionId=null;ui.reportId=null;ui.caseId=null;ui.authMode='login';ui.authMessage='';ui.cloudStatus='syncing';ui.cloudMessage='Получаем прогресс из облака…';render();scrollTop();adminCheck();}
+async function cloudFetch(path,options={}) {const base=String(CONFIG.url||'').replace(/\/$/,'');if(!/^https:\/\//.test(base))throw Error('Неверный адрес облака');let headers={'apikey':CONFIG.anonKey,'Content-Type':'application/json',...(options.headers||{})};if(auth?.access_token)headers.Authorization=`Bearer ${auth.access_token}`;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);let r,body;try{r=await fetch(base+path,{...options,headers,signal:controller.signal});body=await r.text();}finally{clearTimeout(timeout)};let data;try{data=JSON.parse(body)}catch{data=body}if(!r.ok)throw Error(data?.msg||data?.error_description||data?.message||`Ошибка сервера ${r.status}`);return {data,headers:r.headers};}
+async function refreshAuth(){
+ if(refreshPending)return refreshPending;
+ if(!auth?.refresh_token)return false;
+ const prior=auth;
+ refreshPending=(async()=>{try{const r=await cloudFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:prior.refresh_token})});const a=r.data;if(auth!==prior||!a?.access_token)return false;auth={...a,user:a.user||prior.user};persistAuth();return true}catch{return false}})();
+ try{return await refreshPending}finally{refreshPending=null;}
+}
+function enterUser(session){if(!session?.access_token||!session?.user?.id)throw Error('Не удалось подтвердить личный кабинет');adminReset();leagueReset();auth=session;persistAuth();lastInteraction=Date.now();lastPresence=0;lastOnlineRead=0;guestMode=false;set(GUEST,false);loadOwnerData();ui.tab='home';ui.sessionId=null;ui.reportId=null;ui.caseId=null;ui.authMode='login';ui.authMessage='';ui.cloudStatus='syncing';ui.cloudMessage='Получаем прогресс из облака…';render();scrollTop();adminCheck();void pulsePresence(true);}
 async function accountApi(action,payload){const res=await cloudFetch('/functions/v1/gia-accounts',{method:'POST',body:JSON.stringify({action,...payload})});return res.data}
 async function authAction(username,password,method,nickname='',turnstile_token=''){
  if(!cloudReady())return;
@@ -425,7 +447,52 @@ async function recoverAccount(username,recovery_code,password){
   ui.newRecoveryCode=result.recovery_code;ui.authMode='code';ui.authMessage='Пароль изменён. Обязательно сохрани новый резервный код, старый больше не действует.';
  }catch(e){ui.authMessage='Не удалось восстановить доступ: '+e.message}finally{ui.authBusy=false;render()}
 }
-async function signOut(){if(ui.cloudBusy)return;const prior=auth;auth=null;adminReset();leagueReset();localStorage.removeItem(TOKEN);guestMode=false;set(GUEST,false);loadOwnerData();ui.sessionId=null;ui.caseId=null;ui.tab='home';ui.authMode='login';ui.authMessage='Вы вышли из аккаунта. Его прогресс остался отдельно.';ui.cloudMessage='';ui.cloudStatus='idle';render();if(prior?.access_token&&cloudReady()){try{await fetch(String(CONFIG.url).replace(/\/$/, '')+'/auth/v1/logout',{method:'POST',headers:{'apikey':CONFIG.anonKey,'Authorization':'Bearer '+prior.access_token}})}catch{}}}
+// Presence is separate from progress. The server derives the user and session from the JWT.
+async function pulsePresence(force=false){
+ if(closing||!accountId()||!navigator.onLine||document.visibilityState==='hidden'||sessionExpires())return;
+ if(presencePending)return presencePending;
+ if(!force&&Date.now()-lastPresence<PRESENCE_MS)return;
+ const uid=accountId();lastPresence=Date.now();
+ presencePending=(async()=>{try{
+  const jwt=decodeJwt(auth.access_token);if(jwt.exp&&jwt.exp*1000<Date.now()+90000&&!await refreshAuth())return;
+  if(closing||accountId()!==uid)return;
+  await cloudFetch('/rest/v1/rpc/gia_presence_ping',{method:'POST',body:'{}'});
+ }catch{/* A presence failure must not interrupt learning. */}})();
+ try{await presencePending}finally{presencePending=null;}
+}
+async function refreshOnlineCount(force=false){
+ if(closing||!adminUi.allowed||!accountId()||ui.tab!=='admin'||document.visibilityState==='hidden'||onlinePending)return;
+ if(!force&&Date.now()-lastOnlineRead<30000)return;
+ const uid=accountId();onlinePending=true;lastOnlineRead=Date.now();
+ try{
+  const jwt=decodeJwt(auth.access_token);if(jwt.exp&&jwt.exp*1000<Date.now()+90000&&!await refreshAuth())throw Error('Сессия истекла');
+  const r=await cloudFetch('/rest/v1/rpc/gia_online_count',{method:'POST',body:'{}'});
+  if(accountId()!==uid||closing)return;
+  const n=r.data===null||r.data===''?NaN:Number(r.data);adminUi.onlineCount=Number.isFinite(n)&&n>=0?n:null;
+ }catch{if(accountId()===uid)adminUi.onlineCount=null;}
+ finally{onlinePending=false;const el=$('#adminOnlineCount');if(el&&accountId()===uid)el.textContent=Number.isFinite(adminUi.onlineCount)?String(adminUi.onlineCount):'—';}
+}
+async function revokeLocal(session){
+ if(!session?.access_token||!cloudReady())return;
+ try{await fetch(String(CONFIG.url).replace(/\/$/,'')+'/auth/v1/logout?scope=local',{method:'POST',headers:{apikey:CONFIG.anonKey,Authorization:'Bearer '+session.access_token},keepalive:true,...(typeof AbortSignal.timeout==='function'?{signal:AbortSignal.timeout(8000)}:{})})}catch{}
+}
+// Close the UI immediately, but keep owner identity until in-flight writes finish.
+// Account-scoped local storage stays intact even if cloud sync is unavailable.
+async function signOut(reason='manual'){
+ if(closing||!accountId())return;
+ saveDraft();closing=true;clearTimeout(syncTimer);syncAgain=false;
+ ui.authMode='login';ui.authMessage='Завершаем сессию. Учебный прогресс сохраняется…';render();scrollTop();
+ while(syncing||resetInProgress||refreshPending||presencePending||adminUi.busy||adminUi.loading)await new Promise(resolve=>setTimeout(resolve,150));
+ // Pending answers have already been written locally; best effort cloud flush.
+ if(navigator.onLine){try{await syncNow(false)}catch{}}
+ const prior=auth;
+ if(navigator.onLine&&prior?.access_token){try{await cloudFetch('/rest/v1/rpc/gia_presence_leave',{method:'POST',body:'{}'})}catch{}}
+ auth=null;try{localStorage.removeItem(TOKEN)}catch{}adminReset();leagueReset();
+ guestMode=false;set(GUEST,false);loadOwnerData();ui.sessionId=null;ui.reportId=null;ui.caseId=null;ui.figure=null;ui.resetOpen=false;ui.paletteOpen=false;ui.tab='home';ui.authMode='login';ui.authMessage=reason==='idle'?'Сессия завершена после 15 минут бездействия. Твой прогресс сохранён. Войди снова.':reason==='reopen'?'Войди снова, чтобы продолжить подготовку. Твой прогресс сохранён.':'Вы вышли из аккаунта. Его прогресс сохранён.';ui.cloudMessage='';ui.cloudStatus='idle';closing=false;render();
+ void revokeLocal(prior);
+}
+function checkIdle(){if(sessionExpires()&&!closing){void signOut('idle');return true;}return closing;}
+function recordInteraction(e){if(!e.isTrusted||!accountId()||closing)return;if(checkIdle())return;lastInteraction=Date.now();void pulsePresence();}
 let syncing=false,resetInProgress=false,lastCloudRefreshAttempt=0;
 async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userInitiated)notify('Синхронизация уже идёт; повторю после неё.');return;}if(resetInProgress||!auth?.access_token||!CONFIG.url||!CONFIG.anonKey){if(userInitiated)notify('Сначала настрой облако и войди в аккаунт.');return}syncing=true;lastCloudRefreshAttempt=Date.now();ui.cloudBusy=true;ui.cloudStatus='syncing';if(userInitiated)render();try{
  const usr=accountId();if(!usr)throw Error('Не удалось определить аккаунт.');
@@ -444,7 +511,7 @@ async function syncNow(userInitiated=true){if(syncing){syncAgain=true;if(userIni
  if(accountId()!==usr)return;for(const e of events)if(e?.id&&!current.has(e.id))current.set(e.id,e);events=[...current.values()].sort(byTime);saveEvents();
  await syncCaseDrafts(usr,generation);
  if(accountId()!==usr)return false;ui.cloudStatus='ok';ui.cloudMessage=`Синхронизировано в ${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · ${incoming.length} записей в облаке · добавлено с устройства ${missing.length}.`;
- if(ui.tab==='league')leagueLoad(false);
+ if(!closing&&ui.tab==='league')leagueLoad(false);
  if(userInitiated)notify('Прогресс синхронизирован');return true;
  }catch(e){ui.cloudStatus='error';ui.cloudMessage=`Ошибка синхронизации: ${e.message}`;if(userInitiated)notify(ui.cloudMessage,'error');return false;}finally{syncing=false;ui.cloudBusy=false;const again=syncAgain;syncAgain=false;if(userInitiated||!document.activeElement?.matches?.('input,textarea,[contenteditable=true]'))render();if(again)scheduleSync()}}
 async function syncCaseDrafts(userId,generation){
@@ -500,10 +567,11 @@ function migrateGuestProgress(){
  notify('Гостевой прогресс перенесён. Выполняется синхронизация');render();scheduleSync();
 }
 function downloadJSON(){const blob=new Blob([JSON.stringify({app:'gia-med',version:3,exported:when(),events,drafts,draftTimes,appearance:{palette:paletteId(document.documentElement.dataset.palette),theme:document.documentElement.dataset.theme}},null,2)],{type:'application/json'});const href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download='ГИА_прогресс_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(href),3000);}
-async function importJSON(file){try{const text=await file.text(),obj=JSON.parse(text);if(obj.app!=='gia-med'||!Array.isArray(obj.events))throw Error('Неверный формат файла');let map=new Map(events.map(e=>[e.id,e]));for(const e of obj.events){if(e&&typeof e.id==='string'&&typeof e.type==='string')map.set(e.id,e)}events=[...map.values()].sort(byTime);drafts={...(obj.drafts||{}),...drafts};for(const id of Object.keys(obj.drafts||{}))if(!draftTimes[id])draftTimes[id]=obj.draftTimes?.[id]||when();saveEvents();saveDrafts();if(obj.appearance?.palette){const pal=paletteId(obj.appearance.palette);document.documentElement.dataset.palette=pal;set(PALETTE,pal)}if(obj.appearance?.theme==='light'||obj.appearance?.theme==='dark'){document.documentElement.dataset.theme=obj.appearance.theme;set(THEME,obj.appearance.theme)}notify('Прогресс и настройки из резервной копии импортированы');render();scheduleSync()}catch(e){notify('Не удалось импортировать: '+e.message,'error')}}
+async function importJSON(file){const uid=accountId();try{const text=await file.text();if(!uid||closing||accountId()!==uid)return;const obj=JSON.parse(text);if(obj.app!=='gia-med'||!Array.isArray(obj.events))throw Error('Неверный формат файла');let map=new Map(events.map(e=>[e.id,e]));for(const e of obj.events){if(e&&typeof e.id==='string'&&typeof e.type==='string')map.set(e.id,e)}events=[...map.values()].sort(byTime);drafts={...(obj.drafts||{}),...drafts};for(const id of Object.keys(obj.drafts||{}))if(!draftTimes[id])draftTimes[id]=obj.draftTimes?.[id]||when();saveEvents();saveDrafts();if(obj.appearance?.palette){const pal=paletteId(obj.appearance.palette);document.documentElement.dataset.palette=pal;set(PALETTE,pal)}if(obj.appearance?.theme==='light'||obj.appearance?.theme==='dark'){document.documentElement.dataset.theme=obj.appearance.theme;set(THEME,obj.appearance.theme)}notify('Прогресс и настройки из резервной копии импортированы');render();scheduleSync()}catch(e){notify('Не удалось импортировать: '+e.message,'error')}}
 // Event delegation keeps the app responsive even when a view has been replaced.
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-tab]');if(!b)return;
  const d=b.dataset;
+ if(closing)return;
  if(d.adminOpen){toTab('admin');return;}
  if(d.adminRefresh){adminLoad();return;}
  if(d.adminPage){const n=Number(d.adminPage);if(n>=1&&n<=Math.ceil(adminUi.total/30)){adminUi.page=n;adminLoad();}return;}
@@ -513,11 +581,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-tab
  if(d.adminCopy){const val=d.adminCopy==='password'?adminUi.issued?.password:adminUi.issued?.recovery_code;if(val)navigator.clipboard?.writeText(val).then(()=>notify('Скопировано')).catch(()=>notify('Не удалось скопировать','error'));return;}
  if(d.leagueCat){if(LEAGUE_CATEGORIES.some(x=>x[0]===d.leagueCat)){leagueUi.category=d.leagueCat;leagueUi.data=null;leagueUi.loadedAt=0;render();leagueLoad(true);}return;}
  if(d.leagueRefresh){leagueUi.loadedAt=0;leagueLoad(true);return;}
- if(d.guestEnter){guestMode=true;set(GUEST,true);loadOwnerData();ui.authMessage='';ui.tab='home';render();scrollTop();return;}
+ if(d.guestEnter)return;
  if(d.openAuth){guestMode=false;set(GUEST,false);ui.authMode='login';ui.authMessage='';render();return;}
  if(d.authMode){ui.authMode=d.authMode;ui.authMessage='';ui.newRecoveryCode='';render();return;}
  if(d.copyRecovery){const code=ui.newRecoveryCode; if(navigator.clipboard?.writeText)navigator.clipboard.writeText(code).then(()=>notify('Код скопирован')).catch(()=>notify('Скопируй код вручную','error'));else notify('Выдели код и скопируй вручную');return;}
- if(!accountId()&&!guestMode&&!(d.paletteSelect||d.palettePicker||d.themeToggle))return;
+ if((closing||!accountId())&&!(d.paletteSelect||d.palettePicker||d.themeToggle))return;
  if(d.tab){saveDraft();toTab(d.tab);return}
  if(d.sub){ui.sub=d.sub;render();return}
  if(d.startBlock){const n=Number(d.startBlock),q=blockData()[n-1];startSession(q.qs.map(v=>v.id),'block',n);return}
@@ -556,6 +624,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-tab
 
  });
 document.addEventListener('submit',e=>{
+ if(closing||(e.target.id!=='authGateForm'&&!accountId())){e.preventDefault();return;}
  if(e.target.id==='adminSearchForm'){
   e.preventDefault();if(!adminUi.allowed)return;
   adminUi.search=String(e.target.elements.search.value||'').trim().slice(0,64);
@@ -574,7 +643,7 @@ document.addEventListener('submit',e=>{
   resetProgress();return;
  }
  if(e.target.id==='authGateForm'){
-  e.preventDefault();if(!cloudReady()||ui.authBusy)return;
+  e.preventDefault();if(!cloudReady()||ui.authBusy||closing)return;
   const f=e.target,mode=f.dataset.mode;
   const username=String(f.elements.username.value||'').trim().toLowerCase();
   if(!/^[a-z][a-z0-9_]{3,23}$/.test(username)){ui.authMessage='Логин: 4–24 латинских символа, цифры и _, начинать с буквы.';render();return;}
@@ -592,13 +661,13 @@ document.addEventListener('submit',e=>{
   authAction(username,password,mode,nickname,turnstile_token);
  }
 });
-document.addEventListener('input',e=>{if(e.target.id==='caseDraft'){saveDraft();return}if(e.target.id==='testSearch'){ui.search=e.target.value;let term=ui.search.toLowerCase().trim();$('#searchResults').innerHTML=searchResults(term.length>=2?Q.filter(q=>q.q.toLowerCase().includes(term)||String(q.id)===term||q.o.some(o=>o.t.toLowerCase().includes(term))):[],term);return}if(e.target.id==='caseSearch'){let start=e.target.selectionStart||0;ui.caseSearch=e.target.value;render();let input=$('#caseSearch');input?.focus();input?.setSelectionRange(start,start);return}});
-document.addEventListener('change',e=>{if(e.target.id==='importFile'&&e.target.files?.[0])importJSON(e.target.files[0])});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.paletteOpen){ui.paletteOpen=false;render();return}if(e.key==='Escape'&&ui.figure){ui.figure=null;render();return}if(e.target.closest('input,textarea,select'))return;if(ui.tab==='tests'&&ui.sessionId){const ix=indexes(),s=ix.starts.find(x=>x.sessionId===ui.sessionId);if(!s)return;const q=QM.get(s.ids[cursorOf(s,ix)]),previous=(ix.bySession.get(s.sessionId)||[]).some(x=>x.qid===q.id);if(e.key==='Enter'){e.preventDefault();if(previous)advance();return}if(!previous&&/^[1-9]$/.test(e.key)){const opt=shuffleOptions(q,s.sessionId)[Number(e.key)-1];if(opt)answer(opt.k)}}});
+document.addEventListener('input',e=>{if(closing||!accountId())return;if(e.target.id==='caseDraft'){saveDraft();return}if(e.target.id==='testSearch'){ui.search=e.target.value;let term=ui.search.toLowerCase().trim();$('#searchResults').innerHTML=searchResults(term.length>=2?Q.filter(q=>q.q.toLowerCase().includes(term)||String(q.id)===term||q.o.some(o=>o.t.toLowerCase().includes(term))):[],term);return}if(e.target.id==='caseSearch'){let start=e.target.selectionStart||0;ui.caseSearch=e.target.value;render();let input=$('#caseSearch');input?.focus();input?.setSelectionRange(start,start);return}});
+document.addEventListener('change',e=>{if(closing||!accountId())return;if(e.target.id==='importFile'&&e.target.files?.[0])importJSON(e.target.files[0])});
+document.addEventListener('keydown',e=>{if(closing||!accountId())return;if(e.key==='Escape'&&ui.paletteOpen){ui.paletteOpen=false;render();return}if(e.key==='Escape'&&ui.figure){ui.figure=null;render();return}if(e.target.closest('input,textarea,select'))return;if(ui.tab==='tests'&&ui.sessionId){const ix=indexes(),s=ix.starts.find(x=>x.sessionId===ui.sessionId);if(!s)return;const q=QM.get(s.ids[cursorOf(s,ix)]),previous=(ix.bySession.get(s.sessionId)||[]).some(x=>x.qid===q.id);if(e.key==='Enter'){e.preventDefault();if(previous)advance();return}if(!previous&&/^[1-9]$/.test(e.key)){const opt=shuffleOptions(q,s.sessionId)[Number(e.key)-1];if(opt)answer(opt.k)}}});
 // Sync from remote when this device is resumed (not just on first sign-in).
 // Local answers continue to be queued via scheduleSync().
 function pullCloudOnResume(){
- if(document.visibilityState==='hidden'||!navigator.onLine||!accountId()||!cloudReady()||syncing||resetInProgress)return;
+ if(checkIdle()||document.visibilityState==='hidden'||!navigator.onLine||!accountId()||!cloudReady()||syncing||resetInProgress)return;
  const now=Date.now();
  if(now-lastCloudRefreshAttempt<20000)return; // Avoid rapid duplicate requests.
  lastCloudRefreshAttempt=now;
@@ -606,9 +675,17 @@ function pullCloudOnResume(){
 }
 window.addEventListener('online',()=>{scheduleSync();pullCloudOnResume()});
 window.addEventListener('focus',pullCloudOnResume);
-window.addEventListener('pageshow',pullCloudOnResume);
+window.addEventListener('pagehide',e=>{if(!e.persisted&&accountId()&&!isPersistentSession(auth)){saveDraft();void revokeLocal(auth);}});
+window.addEventListener('pageshow',e=>{if(e.persisted&&accountId()&&!isPersistentSession(auth)){void signOut('reopen');return;}pullCloudOnResume();void pulsePresence(true);});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudOnResume()});
 setInterval(pullCloudOnResume,45000);
+// Actual user input counts, not polling or automatic syncing. Capturing prevents
+// a suspended page from accepting an answer after an expired idle deadline.
+for(const event of ['pointerdown','touchstart','keydown','input','wheel','scroll','click'])document.addEventListener(event,e=>{if(accountId()&&checkIdle()){if(e.cancelable)e.preventDefault();e.stopImmediatePropagation();return;}recordInteraction(e);},{capture:true,passive:false});
+setInterval(()=>{if(!checkIdle()){void pulsePresence();void refreshOnlineCount();}},15000);
+window.addEventListener('focus',()=>{if(!checkIdle()){void pulsePresence();void refreshOnlineCount();}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!checkIdle()){void pulsePresence(true);void refreshOnlineCount(true);}});
+
 // The countdown updates at the next calendar day even if the home screen stays open.
 setInterval(refreshGiaCountdown,60000);
 window.addEventListener('focus',refreshGiaCountdown);
@@ -617,5 +694,5 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 document.addEventListener('click',e=>{if(ui.paletteOpen&&!e.target.closest('.palette-control')){ui.paletteOpen=false;render()}});
 window.addEventListener('storage',e=>{if(e.key===ownerKey(KEY)||e.key===ownerKey(GENERATION)){events=read(ownerKey(KEY),[]);drafts=read(ownerKey(DRAFT),{});render()}else if(e.key===THEME||e.key===PALETTE){initTheme();render()}});
 function registerSW(){if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
-initTheme();render();registerSW();if(accountId()&&cloudReady()){setTimeout(()=>syncNow(false),1300);setTimeout(()=>adminCheck(),900);}
+initTheme();render();registerSW();if(previousAuth&&!auth)void revokeLocal(previousAuth);if(accountId()&&cloudReady()){setTimeout(()=>syncNow(false),1300);setTimeout(()=>adminCheck(),900);void pulsePresence(true);}
 })();
